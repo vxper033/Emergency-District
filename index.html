@@ -1,0 +1,1670 @@
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Leitstelle 2D – Weltkarten-Einsatzsimulation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+
+    :root {
+      --bg-dark: #0b1120;
+      --panel-dark: #111827;
+      --border-dark: #1f2937;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: var(--bg-dark);
+      color: #f3f4f6;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    .font-mono-tech {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* Leaflet overrides for dark dispatch look */
+    .leaflet-container {
+      background: #0b1120;
+      font-family: 'Inter', sans-serif;
+    }
+    .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+      background: #111827;
+      color: #f3f4f6;
+      border: 1px solid #374151;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+    }
+
+    /* Map Marker Animations */
+    @keyframes pulse-ring {
+      0% { transform: scale(0.8); opacity: 0.9; }
+      70% { transform: scale(1.7); opacity: 0; }
+      100% { transform: scale(1.7); opacity: 0; }
+    }
+
+    .mission-marker-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mission-pulse {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      animation: pulse-ring 1.6s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+
+    .station-marker {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      border: 2px solid white;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+      font-weight: 800;
+      font-size: 13px;
+      color: white;
+      transition: transform 0.15s ease;
+    }
+    .station-marker:hover {
+      transform: scale(1.12);
+    }
+
+    .vehicle-marker {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 9999px;
+      border: 2px solid #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.7);
+      font-size: 10px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* Build Mode Cursor */
+    .cursor-crosshair-map .leaflet-container {
+      cursor: crosshair !important;
+    }
+
+    /* Toast animation */
+    @keyframes slideInRight {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    .toast-enter {
+      animation: slideInRight 0.25s ease-out forwards;
+    }
+  </style>
+</head>
+<body class="flex flex-col h-screen w-screen overflow-hidden select-none">
+
+  <!-- START SCREEN -->
+  <div id="start-screen" class="fixed inset-0 z-[2000] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+    <div class="max-w-2xl w-full bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-6 md:p-8">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-12 h-12 rounded-xl bg-red-600 flex items-center justify-center text-2xl shadow-lg shadow-red-600/30">🚨</div>
+        <div>
+          <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight text-white">LEITSTELLE 2D</h1>
+          <p class="text-slate-400 text-sm">Interaktive Weltkarten-Einsatzsimulation (Prototyp)</p>
+        </div>
+      </div>
+
+      <p class="text-slate-300 text-sm leading-relaxed mb-6">
+        Baue Feuer-, Rettungs- und Polizeiwachen auf einer echten Weltkarte, kaufe Einsatzfahrzeuge,
+        stelle täglich aus <span class="text-amber-400 font-semibold">6 neuen Bewerbern pro Wache</span> dein Personal ein
+        und koordiniere Einsätze in Echtzeit.
+      </p>
+
+      <div id="continue-box" class="hidden mb-6 p-4 rounded-xl bg-emerald-950/50 border border-emerald-700/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div>
+          <div class="text-emerald-400 font-bold text-sm">Gespeicherter Spielstand gefunden</div>
+          <div id="continue-info" class="text-xs text-slate-300 mt-0.5">Tag 1 • 0 Wachen • 120.000 €</div>
+        </div>
+        <button onclick="continueSavedGame()" class="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow-lg transition cursor-pointer">
+          ▶ Spiel fortsetzen
+        </button>
+      </div>
+
+      <div class="mb-6">
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Startregion für neues Spiel wählen:</label>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5" id="city-selector">
+          <button onclick="selectCity(52.5200, 13.4050, 'Berlin', this)" class="city-btn active-city p-3 rounded-xl border border-blue-500 bg-blue-950/40 text-left hover:bg-slate-800 transition cursor-pointer">
+            <div class="font-bold text-sm text-white">Berlin</div>
+            <div class="text-xs text-slate-400">Deutschland</div>
+          </button>
+          <button onclick="selectCity(48.1351, 11.5820, 'München', this)" class="city-btn p-3 rounded-xl border border-slate-700 bg-slate-800/60 text-left hover:bg-slate-800 transition cursor-pointer">
+            <div class="font-bold text-sm text-white">München</div>
+            <div class="text-xs text-slate-400">Deutschland</div>
+          </button>
+          <button onclick="selectCity(53.5511, 9.9937, 'Hamburg', this)" class="city-btn p-3 rounded-xl border border-slate-700 bg-slate-800/60 text-left hover:bg-slate-800 transition cursor-pointer">
+            <div class="font-bold text-sm text-white">Hamburg</div>
+            <div class="text-xs text-slate-400">Deutschland</div>
+          </button>
+          <button onclick="selectCity(50.9375, 6.9603, 'Köln', this)" class="city-btn p-3 rounded-xl border border-slate-700 bg-slate-800/60 text-left hover:bg-slate-800 transition cursor-pointer">
+            <div class="font-bold text-sm text-white">Köln</div>
+            <div class="text-xs text-slate-400">Deutschland</div>
+          </button>
+          <button onclick="selectCity(48.2082, 16.3738, 'Wien', this)" class="city-btn p-3 rounded-xl border border-slate-700 bg-slate-800/60 text-left hover:bg-slate-800 transition cursor-pointer">
+            <div class="font-bold text-sm text-white">Wien</div>
+            <div class="text-xs text-slate-400">Österreich</div>
+          </button>
+          <button onclick="selectCity(47.3769, 8.5417, 'Zürich', this)" class="city-btn p-3 rounded-xl border border-slate-700 bg-slate-800/60 text-left hover:bg-slate-800 transition cursor-pointer">
+            <div class="font-bold text-sm text-white">Zürich</div>
+            <div class="text-xs text-slate-400">Schweiz</div>
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 text-xs text-slate-300">
+        <div class="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
+          <div class="font-bold text-white mb-1">1. Wachen bauen</div>
+          Platziere Wachen frei auf der echten Weltkarte.
+        </div>
+        <div class="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
+          <div class="font-bold text-white mb-1">2. Personal & Fuhrpark</div>
+          Stelle Bewerber per Annahme/Ablehnung ein & kaufe Fahrzeuge.
+        </div>
+        <div class="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
+          <div class="font-bold text-white mb-1">3. Einsätze disponieren</div>
+          Alarmiere passende Einheiten & verdiene Geld.
+        </div>
+      </div>
+
+      <button onclick="startNewGame()" class="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/25 transition text-base cursor-pointer">
+        Neues Spiel starten (120.000 € Startbudget)
+      </button>
+    </div>
+  </div>
+
+  <!-- GAME OVER SCREEN -->
+  <div id="gameover-screen" class="hidden fixed inset-0 z-[2000] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="max-w-md w-full bg-slate-900 border border-red-800/70 rounded-2xl shadow-2xl p-6 text-center">
+      <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-red-950 border border-red-600 flex items-center justify-center text-3xl">⚠️</div>
+      <h2 class="text-2xl font-extrabold text-white mb-2">Leitstelle geschlossen!</h2>
+      <p class="text-slate-400 text-sm mb-6">Dein Ansehen ist auf 0 % gesunken. Zu viele Notrufe konnten nicht rechtzeitig bearbeitet werden.</p>
+      <div class="bg-slate-800/70 rounded-xl p-4 mb-6 space-y-2 text-sm">
+        <div class="flex justify-between"><span class="text-slate-400">Überlebte Tage:</span><span id="go-days" class="font-bold text-white">1</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Abgeschlossene Einsätze:</span><span id="go-missions" class="font-bold text-emerald-400">0</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Verdientes Geld:</span><span id="go-earned" class="font-bold text-amber-400">0 €</span></div>
+      </div>
+      <button onclick="resetAndRestart()" class="w-full py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition cursor-pointer">
+        Neues Spiel starten
+      </button>
+    </div>
+  </div>
+
+  <!-- TOP HUD BAR -->
+  <header class="h-14 bg-slate-900 border-b border-slate-800 px-3 md:px-4 flex items-center justify-between gap-2 shrink-0 z-30">
+    <div class="flex items-center gap-2.5">
+      <button onclick="toggleMobileSidebar()" class="md:hidden p-2 rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 cursor-pointer" title="Menü">
+        ☰
+      </button>
+      <div class="flex items-center gap-2">
+        <span class="text-lg">🚨</span>
+        <span class="font-extrabold tracking-tight text-sm md:text-base hidden sm:inline">LEITSTELLE <span class="text-blue-400">2D</span></span>
+      </div>
+
+      <!-- Build Quick Button -->
+      <button id="btn-build-mode" onclick="openBuildModal()" class="ml-1 md:ml-3 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 shadow transition cursor-pointer">
+        <span>🏗️</span> <span class="hidden sm:inline">Wache bauen</span>
+      </button>
+    </div>
+
+    <!-- Center Stats -->
+    <div class="flex items-center gap-2 md:gap-5 text-xs md:text-sm">
+      <div class="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700/70" title="Kontostand">
+        <span class="text-emerald-400 font-bold">€</span>
+        <span id="hud-money" class="font-mono-tech font-bold text-emerald-400">120.000</span>
+      </div>
+
+      <div class="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700/70" title="Ansehen der Leitstelle">
+        <span>⭐</span>
+        <span id="hud-rep" class="font-mono-tech font-bold text-amber-400">100%</span>
+      </div>
+
+      <div class="hidden sm:flex items-center gap-2 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700/70">
+        <span id="hud-day" class="font-bold text-blue-400">Tag 1</span>
+        <span class="text-slate-600">|</span>
+        <span id="hud-time" class="font-mono-tech font-bold text-slate-200">08:00</span>
+      </div>
+    </div>
+
+    <!-- Right Controls -->
+    <div class="flex items-center gap-1.5">
+      <div class="flex items-center bg-slate-800 rounded-lg p-0.5 border border-slate-700">
+        <button onclick="setSpeed(0)" id="spd-0" class="px-2 py-1 text-xs rounded font-bold text-slate-400 hover:text-white cursor-pointer" title="Pause">⏸</button>
+        <button onclick="setSpeed(1)" id="spd-1" class="px-2 py-1 text-xs rounded font-bold bg-blue-600 text-white cursor-pointer" title="Normal">1x</button>
+        <button onclick="setSpeed(2)" id="spd-2" class="px-2 py-1 text-xs rounded font-bold text-slate-400 hover:text-white cursor-pointer" title="Schnell">2x</button>
+        <button onclick="setSpeed(4)" id="spd-4" class="px-2 py-1 text-xs rounded font-bold text-slate-400 hover:text-white cursor-pointer" title="Sehr schnell">4x</button>
+      </div>
+
+      <button onclick="toggleSound()" id="btn-sound" class="p-1.5 md:px-2.5 md:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700 cursor-pointer" title="Ton an/aus">
+        🔊
+      </button>
+
+      <button onclick="manualSave()" class="p-1.5 md:px-2.5 md:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700 cursor-pointer" title="Spielstand speichern">
+        💾
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN WORKSPACE -->
+  <div class="flex-1 flex relative overflow-hidden">
+
+    <!-- LEFT SIDEBAR -->
+    <aside id="sidebar" class="fixed md:static inset-y-14 left-0 z-20 w-80 md:w-96 bg-slate-900 border-r border-slate-800 flex flex-col transform -translate-x-full md:translate-x-0 transition-transform duration-200 shadow-2xl md:shadow-none">
+      <!-- Tabs -->
+      <div class="grid grid-cols-3 border-b border-slate-800 bg-slate-950/50 shrink-0">
+        <button onclick="switchTab('missions')" id="tab-missions" class="py-3 text-xs font-bold uppercase tracking-wider border-b-2 border-blue-500 text-blue-400 flex items-center justify-center gap-1.5 cursor-pointer">
+          <span>🚨</span> Einsätze <span id="badge-missions" class="px-1.5 py-0.5 rounded-full bg-red-600 text-white text-[10px]">0</span>
+        </button>
+        <button onclick="switchTab('stations')" id="tab-stations" class="py-3 text-xs font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5 cursor-pointer">
+          <span>🏢</span> Wachen <span id="badge-stations" class="px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-200 text-[10px]">0</span>
+        </button>
+        <button onclick="switchTab('hr')" id="tab-hr" class="py-3 text-xs font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5 cursor-pointer">
+          <span>👥</span> Personal <span id="badge-applicants" class="hidden px-1.5 py-0.5 rounded-full bg-amber-500 text-slate-950 text-[10px] font-extrabold">0</span>
+        </button>
+      </div>
+
+      <!-- Tab Content -->
+      <div id="sidebar-content" class="flex-1 overflow-y-auto p-3 space-y-3">
+        <!-- Dynamically rendered -->
+      </div>
+    </aside>
+
+    <!-- MAP CONTAINER -->
+    <main class="flex-1 relative h-full w-full">
+      <div id="map" class="h-full w-full z-10"></div>
+
+      <!-- Build Mode Banner -->
+      <div id="build-banner" class="hidden absolute top-3 left-1/2 -translate-x-1/2 z-[400] bg-blue-600 text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-3 text-xs md:text-sm font-bold border border-blue-400">
+        <span id="build-banner-text">Klicke auf die Karte, um die Wache zu platzieren</span>
+        <button onclick="cancelBuildMode()" class="px-2 py-0.5 bg-slate-900/50 hover:bg-slate-900 rounded-full text-xs cursor-pointer">Abbrechen</button>
+      </div>
+
+      <!-- City Search / Jump Bar on Map -->
+      <div class="absolute top-3 right-3 z-[400] flex gap-1.5">
+        <input id="map-search-input" type="text" placeholder="Ort suchen (z.B. Frankfurt)..." class="w-40 sm:w-52 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-700 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 backdrop-blur" onkeydown="if(event.key==='Enter') searchLocation()" />
+        <button onclick="searchLocation()" class="px-2.5 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-xs text-white cursor-pointer" title="Ort suchen">🔍</button>
+      </div>
+
+      <!-- Mobile Time Pill -->
+      <div class="sm:hidden absolute bottom-4 left-3 z-[400] bg-slate-900/90 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-mono-tech flex items-center gap-2">
+        <span id="mobile-day" class="text-blue-400 font-bold">Tag 1</span>
+        <span id="mobile-time" class="text-white">08:00</span>
+      </div>
+    </main>
+  </div>
+
+  <!-- MODAL: BUILD STATION -->
+  <div id="modal-build" class="hidden fixed inset-0 z-[1500] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-bold text-white">Neue Wache bauen</h3>
+        <button onclick="closeBuildModal()" class="text-slate-400 hover:text-white text-xl cursor-pointer">&times;</button>
+      </div>
+      <p class="text-xs text-slate-400 mb-4">Wähle einen Wachentyp. Danach klickst du auf eine beliebige Stelle der Weltkarte.</p>
+
+      <div class="space-y-2.5">
+        <button onclick="startBuildMode('fire')" class="w-full p-3 rounded-xl bg-slate-800 hover:bg-slate-750 border border-red-500/40 hover:border-red-500 flex items-center justify-between transition cursor-pointer text-left">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-red-600 flex items-center justify-center text-xl">🚒</div>
+            <div>
+              <div class="font-bold text-sm text-white">Feuerwache</div>
+              <div class="text-xs text-slate-400">Brände, Technische Hilfe, Gefahrgut</div>
+            </div>
+          </div>
+          <div class="font-mono-tech font-bold text-emerald-400 text-sm">50.000 €</div>
+        </button>
+
+        <button onclick="startBuildMode('ems')" class="w-full p-3 rounded-xl bg-slate-800 hover:bg-slate-750 border border-amber-500/40 hover:border-amber-500 flex items-center justify-between transition cursor-pointer text-left">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center text-xl">🚑</div>
+            <div>
+              <div class="font-bold text-sm text-white">Rettungswache</div>
+              <div class="text-xs text-slate-400">Medizinische Notfälle, Notarzt</div>
+            </div>
+          </div>
+          <div class="font-mono-tech font-bold text-emerald-400 text-sm">40.000 €</div>
+        </button>
+
+        <button onclick="startBuildMode('police')" class="w-full p-3 rounded-xl bg-slate-800 hover:bg-slate-750 border border-blue-500/40 hover:border-blue-500 flex items-center justify-between transition cursor-pointer text-left">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center text-xl">🚓</div>
+            <div>
+              <div class="font-bold text-sm text-white">Polizeiwache</div>
+              <div class="text-xs text-slate-400">Diebstahl, Einbruch, Verkehrsunfall</div>
+            </div>
+          </div>
+          <div class="font-mono-tech font-bold text-emerald-400 text-sm">45.000 €</div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: DISPATCH MISSION -->
+  <div id="modal-dispatch" class="hidden fixed inset-0 z-[1500] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full max-h-[88vh] flex flex-col shadow-2xl">
+      <div class="p-4 border-b border-slate-800 flex justify-between items-start">
+        <div>
+          <span id="disp-cat" class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-red-600 text-white">FEUER</span>
+          <h3 id="disp-title" class="text-lg font-bold text-white mt-1">Zimmerbrand</h3>
+          <div id="disp-req" class="text-xs text-slate-300 mt-1">Benötigt: 1x LF 20, 1x RTW</div>
+        </div>
+        <button onclick="closeDispatchModal()" class="text-slate-400 hover:text-white text-xl cursor-pointer">&times;</button>
+      </div>
+
+      <div id="disp-vehicle-list" class="flex-1 overflow-y-auto p-4 space-y-2">
+        <!-- Vehicles listed here -->
+      </div>
+
+      <div class="p-4 border-t border-slate-800 flex items-center justify-between gap-3 bg-slate-950/50 rounded-b-2xl">
+        <div class="text-xs text-slate-400">
+          Belohnung: <span id="disp-reward" class="text-emerald-400 font-bold font-mono-tech">+2.500 €</span>
+        </div>
+        <button onclick="confirmDispatch()" id="btn-confirm-dispatch" class="px-5 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl text-sm transition cursor-pointer">
+          🚨 Alarmieren!
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: STATION DETAILS & BUY VEHICLES -->
+  <div id="modal-station" class="hidden fixed inset-0 z-[1500] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full max-h-[88vh] flex flex-col shadow-2xl">
+      <div class="p-4 border-b border-slate-800 flex justify-between items-center">
+        <div>
+          <h3 id="st-modal-name" class="text-lg font-bold text-white">Feuerwache 1</h3>
+          <p id="st-modal-sub" class="text-xs text-slate-400">Personal: 4 • Fahrzeuge: 1</p>
+        </div>
+        <button onclick="closeStationModal()" class="text-slate-400 hover:text-white text-xl cursor-pointer">&times;</button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-4 space-y-5">
+        <div>
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Fahrzeuge auf Wache</h4>
+          <div id="st-modal-vehicles" class="space-y-2"></div>
+        </div>
+
+        <div>
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Neues Fahrzeug kaufen</h4>
+          <div id="st-modal-shop" class="space-y-2"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST CONTAINER -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-[1800] flex flex-col gap-2 pointer-events-none max-w-xs w-full"></div>
+
+  <script>
+    // =========================================================================
+    // AUDIO ENGINE (Web Audio API - No external assets needed)
+    // =========================================================================
+    const AudioSys = {
+      ctx: null,
+      enabled: true,
+      init() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      },
+      playTone(freq, duration, type = 'sine', vol = 0.08, delay = 0) {
+        if (!this.enabled) return;
+        try {
+          this.init();
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime + delay);
+          gain.gain.setValueAtTime(vol, this.ctx.currentTime + delay);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + delay + duration);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(this.ctx.currentTime + delay);
+          osc.stop(this.ctx.currentTime + delay + duration);
+        } catch (e) {}
+      },
+      playAlarm() {
+        this.playTone(660, 0.14, 'triangle', 0.09, 0);
+        this.playTone(880, 0.20, 'triangle', 0.09, 0.15);
+      },
+      playDispatch() {
+        this.playTone(520, 0.08, 'sine', 0.08, 0);
+        this.playTone(780, 0.12, 'sine', 0.08, 0.09);
+      },
+      playCash() {
+        this.playTone(880, 0.09, 'sine', 0.07, 0);
+        this.playTone(1174, 0.18, 'sine', 0.07, 0.09);
+      },
+      playReject() {
+        this.playTone(280, 0.12, 'sawtooth', 0.05, 0);
+      }
+    };
+
+    // =========================================================================
+    // GAME DEFINITIONS & CATALOGS
+    // =========================================================================
+    const SAVE_KEY = 'leitstelle_2d_save_v1';
+
+    const STATION_TYPES = {
+      fire: { name: 'Feuerwache', cost: 50000, color: '#dc2626', icon: '🚒', short: 'FW' },
+      ems: { name: 'Rettungswache', cost: 40000, color: '#f59e0b', icon: '🚑', short: 'RW' },
+      police: { name: 'Polizeiwache', cost: 45000, color: '#2563eb', icon: '🚓', short: 'PW' }
+    };
+
+    const VEHICLE_CATALOG = {
+      LF20: { type: 'LF20', name: 'LF 20 (Löschfahrzeug)', stationType: 'fire', cost: 15000, crew: 4, speedKmh: 75, icon: '🚒', color: '#dc2626' },
+      DLK:  { type: 'DLK',  name: 'DLK 23/12 (Drehleiter)', stationType: 'fire', cost: 25000, crew: 2, speedKmh: 68, icon: '🪜', color: '#b91c1c' },
+      ELW:  { type: 'ELW',  name: 'ELW 1 (Einsatzleitwagen)', stationType: 'fire', cost: 12000, crew: 2, speedKmh: 90, icon: '🚐', color: '#ef4444' },
+      RTW:  { type: 'RTW',  name: 'RTW (Rettungswagen)', stationType: 'ems', cost: 14000, crew: 2, speedKmh: 85, icon: '🚑', color: '#f59e0b' },
+      NEF:  { type: 'NEF',  name: 'NEF (Notarzt)', stationType: 'ems', cost: 18000, crew: 2, speedKmh: 105, icon: '🩺', color: '#d97706' },
+      FUSTW:{ type: 'FUSTW',name: 'FuStW (Streifenwagen)', stationType: 'police', cost: 10000, crew: 2, speedKmh: 95, icon: '🚓', color: '#2563eb' },
+      SEK:  { type: 'SEK',  name: 'GruKw / Spezialeinheit', stationType: 'police', cost: 22000, crew: 4, speedKmh: 85, icon: '🛡️', color: '#1d4ed8' }
+    };
+
+    const MISSION_TEMPLATES = [
+      // Fire
+      { title: 'Mülltonnenbrand', category: 'FEUER', color: '#dc2626', req: { LF20: 1 }, reward: 1200, duration: 15, maxTime: 95, needs: ['fire'] },
+      { title: 'Zimmerbrand', category: 'FEUER', color: '#dc2626', req: { LF20: 1, RTW: 1 }, reward: 2800, duration: 22, maxTime: 105, needs: ['fire', 'ems'] },
+      { title: 'Dachstuhlbrand', category: 'FEUER', color: '#dc2626', req: { LF20: 2, DLK: 1 }, reward: 4800, duration: 30, maxTime: 120, needs: ['fire'] },
+      { title: 'Brennender PKW', category: 'FEUER', color: '#dc2626', req: { LF20: 1, FUSTW: 1 }, reward: 2400, duration: 18, maxTime: 100, needs: ['fire', 'police'] },
+      { title: 'Großbrand Lagerhalle', category: 'FEUER', color: '#dc2626', req: { LF20: 2, DLK: 1, ELW: 1, RTW: 1 }, reward: 7500, duration: 38, maxTime: 140, needs: ['fire', 'ems'] },
+      // EMS
+      { title: 'Kreislaufkollaps', category: 'RETTUNG', color: '#f59e0b', req: { RTW: 1 }, reward: 1400, duration: 16, maxTime: 85, needs: ['ems'] },
+      { title: 'Verdacht auf Herzinfarkt', category: 'RETTUNG', color: '#f59e0b', req: { RTW: 1, NEF: 1 }, reward: 3200, duration: 24, maxTime: 85, needs: ['ems'] },
+      { title: 'Arbeitsunfall Baustelle', category: 'RETTUNG', color: '#f59e0b', req: { RTW: 1, NEF: 1 }, reward: 3000, duration: 22, maxTime: 95, needs: ['ems'] },
+      { title: 'Sturz im Haushalt', category: 'RETTUNG', color: '#f59e0b', req: { RTW: 1 }, reward: 1300, duration: 15, maxTime: 90, needs: ['ems'] },
+      // Police
+      { title: 'Ladendiebstahl', category: 'POLIZEI', color: '#2563eb', req: { FUSTW: 1 }, reward: 1100, duration: 15, maxTime: 95, needs: ['police'] },
+      { title: 'Wohnungseinbruch', category: 'POLIZEI', color: '#2563eb', req: { FUSTW: 2 }, reward: 2600, duration: 22, maxTime: 105, needs: ['police'] },
+      { title: 'Randale im Bahnhof', category: 'POLIZEI', color: '#2563eb', req: { FUSTW: 2, SEK: 1 }, reward: 4500, duration: 28, maxTime: 110, needs: ['police'] },
+      { title: 'Verkehrsunfall mit Verletzten', category: 'MIX', color: '#8b5cf6', req: { FUSTW: 1, RTW: 1, LF20: 1 }, reward: 4200, duration: 26, maxTime: 110, needs: ['police', 'ems', 'fire'] }
+    ];
+
+    const FIRST_NAMES = ['Lukas', 'Mia', 'Leon', 'Hannah', 'Paul', 'Lea', 'Jonas', 'Anna', 'Tim', 'Laura', 'Max', 'Sophie', 'Felix', 'Julia', 'Moritz', 'Elena', 'Jan', 'Marie', 'Niklas', 'Sarah'];
+    const LAST_NAMES = ['Müller', 'Schmidt', 'Schneider', 'Fischer', 'Weber', 'Meyer', 'Wagner', 'Becker', 'Schulz', 'Hoffmann', 'Koch', 'Bauer', 'Richter', 'Klein', 'Wolf', 'Schröder'];
+    const TRAITS = [
+      { label: 'Erfahrener Maschinist', bonus: '+10% Tempo' },
+      { label: 'Teamplayer', bonus: 'Zuverlässig' },
+      { label: 'Quereinsteiger', bonus: 'Motiviert' },
+      { label: 'Notfall-Profi', bonus: 'Stressresistent' },
+      { label: 'Ortskundig', bonus: 'Kennt Abkürzungen' },
+      { label: 'Sanitätshelfer', bonus: 'Allrounder' }
+    ];
+
+    // =========================================================================
+    // GAME STATE
+    // =========================================================================
+    let selectedCity = { lat: 52.5200, lng: 13.4050, name: 'Berlin' };
+
+    let state = {
+      money: 120000,
+      totalEarned: 0,
+      reputation: 100,
+      day: 1,
+      minutesOfDay: 8 * 60, // 08:00
+      speed: 1,
+      missionsCompleted: 0,
+      mapCenter: [52.5200, 13.4050],
+      mapZoom: 12,
+      stations: [],
+      vehicles: [],
+      missions: [],
+      nextId: 1
+    };
+
+    let activeTab = 'missions';
+    let buildModeType = null;
+    let currentDispatchMissionId = null;
+    let selectedVehicleIdsForDispatch = new Set();
+    let currentStationModalId = null;
+    let missionSpawnTimer = 4; // seconds until next mission check
+
+    // Leaflet references
+    let map = null;
+    let stationMarkers = {};
+    let vehicleMarkers = {};
+    let missionMarkers = {};
+    let routeLines = {};
+
+    // =========================================================================
+    // INITIALIZATION & START SCREEN
+    // =========================================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      checkSavedGame();
+    });
+
+    function checkSavedGame() {
+      try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          document.getElementById('continue-box').classList.remove('hidden');
+          document.getElementById('continue-info').textContent =
+            `Tag ${parsed.day} • ${parsed.stations.length} Wachen • ${formatMoney(parsed.money)}`;
+        }
+      } catch (e) {}
+    }
+
+    function selectCity(lat, lng, name, btn) {
+      selectedCity = { lat, lng, name };
+      document.querySelectorAll('.city-btn').forEach(b => {
+        b.classList.remove('border-blue-500', 'bg-blue-950/40');
+        b.classList.add('border-slate-700', 'bg-slate-800/60');
+      });
+      btn.classList.remove('border-slate-700', 'bg-slate-800/60');
+      btn.classList.add('border-blue-500', 'bg-blue-950/40');
+    }
+
+    function startNewGame() {
+      AudioSys.init();
+      state = {
+        money: 120000,
+        totalEarned: 0,
+        reputation: 100,
+        day: 1,
+        minutesOfDay: 8 * 60,
+        speed: 1,
+        missionsCompleted: 0,
+        mapCenter: [selectedCity.lat, selectedCity.lng],
+        mapZoom: 12,
+        stations: [],
+        vehicles: [],
+        missions: [],
+        nextId: 1
+      };
+      document.getElementById('start-screen').classList.add('hidden');
+      initMap();
+      saveGame(false);
+      updateAllUI();
+      showToast(`Willkommen in ${selectedCity.name}! Baue deine erste Wache über "Wache bauen".`, 'info');
+    }
+
+    function continueSavedGame() {
+      AudioSys.init();
+      try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return;
+        state = JSON.parse(raw);
+        document.getElementById('start-screen').classList.add('hidden');
+        initMap();
+        rebuildMapMarkers();
+        updateAllUI();
+        showToast('Spielstand geladen!', 'success');
+      } catch (e) {
+        showToast('Fehler beim Laden des Spielstands.', 'error');
+      }
+    }
+
+    function resetAndRestart() {
+      localStorage.removeItem(SAVE_KEY);
+      location.reload();
+    }
+
+    // =========================================================================
+    // MAP SETUP (LEAFLET)
+    // =========================================================================
+    function initMap() {
+      if (map) {
+        map.remove();
+      }
+      map = L.map('map', {
+        zoomControl: true,
+        attributionControl: true
+      }).setView(state.mapCenter, state.mapZoom);
+
+      // Dark CartoDB Voyager / Dark Matter hybrid look -> Voyager is crisp & readable, DarkMatter is super tactical
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: 'abcd',
+        maxZoom: 19
+      }).addTo(map);
+
+      map.on('click', onMapClick);
+      map.on('moveend', () => {
+        const c = map.getCenter();
+        state.mapCenter = [c.lat, c.lng];
+        state.mapZoom = map.getZoom();
+      });
+
+      setTimeout(() => map.invalidateSize(), 200);
+    }
+
+    async function searchLocation() {
+      const q = document.getElementById('map-search-input').value.trim();
+      if (!q) return;
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`);
+        const data = await res.json();
+        if (data && data.length > 0) {
+          const lat = parseFloat(data[0].lat);
+          const lon = parseFloat(data[0].lon);
+          map.flyTo([lat, lon], 12, { duration: 1.2 });
+          showToast(`Karte verschoben nach: ${data[0].display_name.split(',')[0]}`, 'info');
+        } else {
+          showToast('Ort nicht gefunden.', 'error');
+        }
+      } catch (e) {
+        showToast('Ortsuche momentan nicht erreichbar.', 'error');
+      }
+    }
+
+    function rebuildMapMarkers() {
+      stationMarkers = {};
+      vehicleMarkers = {};
+      missionMarkers = {};
+      routeLines = {};
+
+      state.stations.forEach(createStationMarker);
+      state.missions.forEach(createMissionMarker);
+      state.vehicles.forEach(v => {
+        if (v.status !== 2) {
+          createOrUpdateVehicleMarker(v);
+        }
+      });
+    }
+
+    // =========================================================================
+    // BUILDING STATIONS & APPLICANTS (6 NEW PER DAY PER STATION)
+    // =========================================================================
+    function openBuildModal() {
+      document.getElementById('modal-build').classList.remove('hidden');
+    }
+
+    function closeBuildModal() {
+      document.getElementById('modal-build').classList.add('hidden');
+    }
+
+    function startBuildMode(type) {
+      const def = STATION_TYPES[type];
+      if (state.money < def.cost) {
+        AudioSys.playReject();
+        showToast(`Nicht genug Geld! Benötigt: ${formatMoney(def.cost)}`, 'error');
+        return;
+      }
+      buildModeType = type;
+      closeBuildModal();
+      document.body.classList.add('cursor-crosshair-map');
+      document.getElementById('build-banner').classList.remove('hidden');
+      document.getElementById('build-banner-text').textContent = `Klicke auf die Karte, um "${def.name}" (${formatMoney(def.cost)}) zu bauen`;
+    }
+
+    function cancelBuildMode() {
+      buildModeType = null;
+      document.body.classList.remove('cursor-crosshair-map');
+      document.getElementById('build-banner').classList.add('hidden');
+    }
+
+    function onMapClick(e) {
+      if (!buildModeType) return;
+      const def = STATION_TYPES[buildModeType];
+      if (state.money < def.cost) {
+        cancelBuildMode();
+        return;
+      }
+
+      const countOfType = state.stations.filter(s => s.type === buildModeType).length + 1;
+      const station = {
+        id: state.nextId++,
+        type: buildModeType,
+        name: `${def.name} ${countOfType}`,
+        lat: e.latlng.lat,
+        lng: e.latlng.lng,
+        staff: [
+          // Start with 2 basic staff so player can immediately test a vehicle, while needing more via HR!
+          generatePerson(true),
+          generatePerson(true)
+        ],
+        applicants: generateDailyApplicants(6)
+      };
+
+      state.money -= def.cost;
+      state.stations.push(station);
+
+      createStationMarker(station);
+      cancelBuildMode();
+      AudioSys.playCash();
+      saveGame(false);
+      updateAllUI();
+      showToast(`${station.name} gebaut! 6 neue Bewerber warten im Tab "Personal".`, 'success');
+      openStationModal(station.id);
+    }
+
+    function generatePerson(hired = false) {
+      const fn = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+      const ln = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
+      const trait = TRAITS[Math.floor(Math.random() * TRAITS.length)];
+      const stars = Math.floor(Math.random() * 3) + 3; // 3-5 stars
+      const age = Math.floor(Math.random() * 24) + 20;
+      const hireCost = 500 + stars * 250;
+      return {
+        id: state.nextId++,
+        name: `${fn} ${ln}`,
+        age,
+        trait: trait.label,
+        bonus: trait.bonus,
+        stars,
+        hireCost
+      };
+    }
+
+    function generateDailyApplicants(count = 6) {
+      const list = [];
+      for (let i = 0; i < count; i++) {
+        list.push(generatePerson(false));
+      }
+      return list;
+    }
+
+    function acceptApplicant(stationId, applicantId) {
+      const station = state.stations.find(s => s.id === stationId);
+      if (!station) return;
+      const idx = station.applicants.findIndex(a => a.id === applicantId);
+      if (idx === -1) return;
+      const person = station.applicants[idx];
+
+      if (state.money < person.hireCost) {
+        AudioSys.playReject();
+        showToast(`Nicht genug Geld für Einstellung (${formatMoney(person.hireCost)})`, 'error');
+        return;
+      }
+
+      state.money -= person.hireCost;
+      station.applicants.splice(idx, 1);
+      station.staff.push(person);
+      AudioSys.playCash();
+      saveGame(false);
+      updateAllUI();
+      showToast(`${person.name} bei ${station.name} eingestellt!`, 'success');
+    }
+
+    function rejectApplicant(stationId, applicantId) {
+      const station = state.stations.find(s => s.id === stationId);
+      if (!station) return;
+      const idx = station.applicants.findIndex(a => a.id === applicantId);
+      if (idx === -1) return;
+      const person = station.applicants[idx];
+      station.applicants.splice(idx, 1);
+      AudioSys.playReject();
+      saveGame(false);
+      updateAllUI();
+      showToast(`Bewerber ${person.name} abgelehnt.`, 'info');
+    }
+
+    function createStationMarker(station) {
+      const def = STATION_TYPES[station.type];
+      const icon = L.divIcon({
+        className: '',
+        html: `<div class="station-marker" style="width:34px;height:34px;background:${def.color};">${def.icon}</div>`,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17]
+      });
+
+      const marker = L.marker([station.lat, station.lng], { icon }).addTo(map);
+      marker.bindTooltip(`${station.name}`, { direction: 'top', offset: [0, -14] });
+      marker.on('click', () => {
+        if (!buildModeType) openStationModal(station.id);
+      });
+      stationMarkers[station.id] = marker;
+    }
+
+    // =========================================================================
+    // STATION MODAL & BUYING VEHICLES
+    // =========================================================================
+    function openStationModal(stationId) {
+      currentStationModalId = stationId;
+      renderStationModal();
+      document.getElementById('modal-station').classList.remove('hidden');
+    }
+
+    function closeStationModal() {
+      currentStationModalId = null;
+      document.getElementById('modal-station').classList.add('hidden');
+    }
+
+    function renderStationModal() {
+      const station = state.stations.find(s => s.id === currentStationModalId);
+      if (!station) return;
+
+      const vehicles = state.vehicles.filter(v => v.stationId === station.id);
+      const assignedCrew = vehicles.reduce((sum, v) => sum + (v.status !== 2 ? VEHICLE_CATALOG[v.type].crew : 0), 0);
+
+      document.getElementById('st-modal-name').textContent = station.name;
+      document.getElementById('st-modal-sub').textContent =
+        `Personal: ${station.staff.length} (frei: ${Math.max(0, station.staff.length - assignedCrew)}) • Fahrzeuge: ${vehicles.length} • Bewerber: ${station.applicants.length}`;
+
+      const vContainer = document.getElementById('st-modal-vehicles');
+      if (vehicles.length === 0) {
+        vContainer.innerHTML = `<div class="text-xs text-slate-500 italic p-3 bg-slate-800/40 rounded-lg">Noch keine Fahrzeuge gekauft.</div>`;
+      } else {
+        vContainer.innerHTML = vehicles.map(v => {
+          const cat = VEHICLE_CATALOG[v.type];
+          const statusLabel = getStatusBadge(v.status);
+          return `
+            <div class="p-2.5 rounded-xl bg-slate-800/70 border border-slate-700/60 flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <span class="text-lg">${cat.icon}</span>
+                <div>
+                  <div class="text-sm font-bold text-white">${v.name}</div>
+                  <div class="text-[11px] text-slate-400">Besatzung: ${cat.crew} Pers. • ${cat.speedKmh} km/h</div>
+                </div>
+              </div>
+              ${statusLabel}
+            </div>
+          `;
+        }).join('');
+      }
+
+      const shopContainer = document.getElementById('st-modal-shop');
+      const availableCatalog = Object.values(VEHICLE_CATALOG).filter(c => c.stationType === station.type);
+      shopContainer.innerHTML = availableCatalog.map(c => {
+        const canAfford = state.money >= c.cost;
+        return `
+          <div class="p-2.5 rounded-xl bg-slate-800/50 border border-slate-700/60 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5">
+              <span class="text-lg">${c.icon}</span>
+              <div>
+                <div class="text-sm font-bold text-white">${c.name}</div>
+                <div class="text-[11px] text-slate-400">Benötigt ${c.crew} Personal • ${c.speedKmh} km/h</div>
+              </div>
+            </div>
+            <button onclick="buyVehicle(${station.id}, '${c.type}')" ${canAfford ? '' : 'disabled'}
+              class="px-3 py-1.5 rounded-lg text-xs font-bold ${canAfford ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer' : 'bg-slate-700 text-slate-400 cursor-not-allowed'}">
+              ${formatMoney(c.cost)}
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function buyVehicle(stationId, vehicleType) {
+      const station = state.stations.find(s => s.id === stationId);
+      const cat = VEHICLE_CATALOG[vehicleType];
+      if (!station || !cat) return;
+
+      if (state.money < cat.cost) {
+        AudioSys.playReject();
+        showToast('Nicht genug Geld!', 'error');
+        return;
+      }
+
+      state.money -= cat.cost;
+      const count = state.vehicles.filter(v => v.stationId === stationId && v.type === vehicleType).length + 1;
+      const vehicle = {
+        id: state.nextId++,
+        stationId: station.id,
+        type: vehicleType,
+        name: `${vehicleType} (${station.name.split(' ')[0]} ${count})`,
+        status: 2, // 2 = Auf Wache
+        lat: station.lat,
+        lng: station.lng,
+        targetMissionId: null,
+        routeStart: null,
+        routeEnd: null,
+        travelTotal: 0,
+        travelElapsed: 0
+      };
+
+      state.vehicles.push(vehicle);
+      AudioSys.playCash();
+      saveGame(false);
+      renderStationModal();
+      updateAllUI();
+      showToast(`${vehicle.name} gekauft!`, 'success');
+    }
+
+    // =========================================================================
+    // MISSIONS & DISPATCHING
+    // =========================================================================
+    function spawnMission() {
+      if (state.stations.length === 0) return;
+      if (state.missions.length >= Math.min(10, state.stations.length * 3 + 2)) return;
+
+      const stationTypesOwned = new Set(state.stations.map(s => s.type));
+      // Filter templates where player owns at least one of the primary station types
+      const validTemplates = MISSION_TEMPLATES.filter(t => t.needs.some(n => stationTypesOwned.has(n)));
+      if (validTemplates.length === 0) return;
+
+      const tpl = validTemplates[Math.floor(Math.random() * validTemplates.length)];
+      // Pick a random station that matches one of the needed types to spawn nearby
+      const matchingStations = state.stations.filter(s => tpl.needs.includes(s.type));
+      const anchor = matchingStations[Math.floor(Math.random() * matchingStations.length)];
+
+      // Random offset ~ 1km to 7km around anchor station
+      const radiusDeg = 0.015 + Math.random() * 0.045;
+      const angle = Math.random() * Math.PI * 2;
+      const lat = anchor.lat + Math.cos(angle) * radiusDeg * 0.7;
+      const lng = anchor.lng + Math.sin(angle) * radiusDeg;
+
+      const mission = {
+        id: state.nextId++,
+        title: tpl.title,
+        category: tpl.category,
+        color: tpl.color,
+        lat,
+        lng,
+        req: { ...tpl.req },
+        reward: tpl.reward,
+        duration: tpl.duration,
+        progress: 0,
+        timeLeft: tpl.maxTime,
+        maxTime: tpl.maxTime,
+        assignedVehicleIds: []
+      };
+
+      state.missions.push(mission);
+      createMissionMarker(mission);
+      AudioSys.playAlarm();
+      updateAllUI();
+      showToast(`Neuer Einsatz: ${mission.title}`, 'alert');
+    }
+
+    function createMissionMarker(mission) {
+      const icon = L.divIcon({
+        className: '',
+        html: `
+          <div class="mission-marker-wrapper">
+            <div class="mission-pulse" style="background:${mission.color};"></div>
+            <div style="width:26px;height:26px;border-radius:50%;background:${mission.color};border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;box-shadow:0 3px 10px rgba(0,0,0,0.6);">!</div>
+          </div>
+        `,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13]
+      });
+
+      const marker = L.marker([mission.lat, mission.lng], { icon }).addTo(map);
+      marker.bindTooltip(`${mission.title} (+${formatMoney(mission.reward)})`, { direction: 'top', offset: [0, -14] });
+      marker.on('click', () => {
+        if (!buildModeType) openDispatchModal(mission.id);
+      });
+      missionMarkers[mission.id] = marker;
+    }
+
+    function openDispatchModal(missionId) {
+      const mission = state.missions.find(m => m.id === missionId);
+      if (!mission) return;
+
+      currentDispatchMissionId = missionId;
+      selectedVehicleIdsForDispatch.clear();
+
+      document.getElementById('disp-cat').textContent = mission.category;
+      document.getElementById('disp-cat').style.backgroundColor = mission.color;
+      document.getElementById('disp-title').textContent = mission.title;
+      document.getElementById('disp-reward').textContent = `+${formatMoney(mission.reward)}`;
+
+      const reqText = Object.entries(mission.req).map(([k, v]) => `${v}x ${k}`).join(', ');
+      document.getElementById('disp-req').textContent = `Benötigt: ${reqText}`;
+
+      renderDispatchVehicleList(mission);
+      document.getElementById('modal-dispatch').classList.remove('hidden');
+    }
+
+    function closeDispatchModal() {
+      currentDispatchMissionId = null;
+      selectedVehicleIdsForDispatch.clear();
+      document.getElementById('modal-dispatch').classList.add('hidden');
+    }
+
+    function getFreeStaffAtStation(stationId) {
+      const station = state.stations.find(s => s.id === stationId);
+      if (!station) return 0;
+      const busyCrew = state.vehicles
+        .filter(v => v.stationId === stationId && v.status !== 2)
+        .reduce((sum, v) => sum + VEHICLE_CATALOG[v.type].crew, 0);
+      // Also subtract currently selected vehicles in modal from same station
+      let selectedCrew = 0;
+      selectedVehicleIdsForDispatch.forEach(vid => {
+        const v = state.vehicles.find(x => x.id === vid);
+        if (v && v.stationId === stationId) {
+          selectedCrew += VEHICLE_CATALOG[v.type].crew;
+        }
+      });
+      return station.staff.length - busyCrew - selectedCrew;
+    }
+
+    function renderDispatchVehicleList(mission) {
+      const container = document.getElementById('disp-vehicle-list');
+      const readyVehicles = state.vehicles.filter(v => v.status === 2);
+
+      if (readyVehicles.length === 0) {
+        container.innerHTML = `<div class="text-sm text-slate-400 text-center py-6">Keine freien Fahrzeuge verfügbar. Baue Wachen oder kaufe Fahrzeuge!</div>`;
+        document.getElementById('btn-confirm-dispatch').disabled = true;
+        return;
+      }
+
+      // Sort by distance to mission
+      const sorted = [...readyVehicles].sort((a, b) => {
+        return getDistanceKm(a.lat, a.lng, mission.lat, mission.lng) - getDistanceKm(b.lat, b.lng, mission.lat, mission.lng);
+      });
+
+      container.innerHTML = sorted.map(v => {
+        const cat = VEHICLE_CATALOG[v.type];
+        const dist = getDistanceKm(v.lat, v.lng, mission.lat, mission.lng);
+        const etaSec = Math.max(4, Math.round((dist / (cat.speedKmh / 3.6)) * 1000 / 220)); // scaled for fun gameplay
+        const isSelected = selectedVehicleIdsForDispatch.has(v.id);
+        const freeStaff = getFreeStaffAtStation(v.stationId);
+        const hasEnoughStaff = isSelected || freeStaff >= cat.crew;
+        const isNeededType = mission.req[v.type] > 0;
+
+        return `
+          <div onclick="${hasEnoughStaff ? `toggleSelectVehicle(${v.id})` : ''}"
+            class="p-3 rounded-xl border transition flex items-center justify-between ${
+              isSelected ? 'bg-blue-950/60 border-blue-500 cursor-pointer' :
+              hasEnoughStaff ? 'bg-slate-800/60 border-slate-700 hover:border-slate-500 cursor-pointer' :
+              'bg-slate-900/60 border-slate-800 opacity-50 cursor-not-allowed'
+            }">
+            <div class="flex items-center gap-3">
+              <span class="text-xl">${cat.icon}</span>
+              <div>
+                <div class="text-sm font-bold text-white flex items-center gap-2">
+                  ${v.name}
+                  ${isNeededType ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-900/80 text-emerald-300">Benötigt</span>' : ''}
+                </div>
+                <div class="text-xs text-slate-400">
+                  Entfernung: ${dist.toFixed(1)} km • Anfahrt: ~${etaSec}s • Crew: ${cat.crew}
+                  ${!hasEnoughStaff ? '<span class="text-red-400 font-bold ml-1">(Zu wenig Personal!)</span>' : ''}
+                </div>
+              </div>
+            </div>
+            <div class="w-5 h-5 rounded border flex items-center justify-center ${isSelected ? 'bg-blue-500 border-blue-400 text-white' : 'border-slate-600'}">
+              ${isSelected ? '✓' : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('btn-confirm-dispatch').disabled = selectedVehicleIdsForDispatch.size === 0;
+    }
+
+    function toggleSelectVehicle(vehicleId) {
+      if (selectedVehicleIdsForDispatch.has(vehicleId)) {
+        selectedVehicleIdsForDispatch.delete(vehicleId);
+      } else {
+        selectedVehicleIdsForDispatch.add(vehicleId);
+      }
+      const mission = state.missions.find(m => m.id === currentDispatchMissionId);
+      if (mission) renderDispatchVehicleList(mission);
+    }
+
+    function confirmDispatch() {
+      const mission = state.missions.find(m => m.id === currentDispatchMissionId);
+      if (!mission || selectedVehicleIdsForDispatch.size === 0) return;
+
+      selectedVehicleIdsForDispatch.forEach(vid => {
+        const v = state.vehicles.find(x => x.id === vid);
+        if (!v || v.status !== 2) return;
+
+        const cat = VEHICLE_CATALOG[v.type];
+        const dist = getDistanceKm(v.lat, v.lng, mission.lat, mission.lng);
+        const travelSec = Math.max(4, (dist / (cat.speedKmh / 3.6)) * 1000 / 220);
+
+        v.status = 3; // En route
+        v.targetMissionId = mission.id;
+        v.routeStart = [v.lat, v.lng];
+        v.routeEnd = [mission.lat, mission.lng];
+        v.travelTotal = travelSec;
+        v.travelElapsed = 0;
+
+        mission.assignedVehicleIds.push(v.id);
+        createOrUpdateVehicleMarker(v);
+      });
+
+      AudioSys.playDispatch();
+      closeDispatchModal();
+      updateAllUI();
+      showToast(`Einheiten alarmiert zu: ${mission.title}`, 'info');
+    }
+
+    function createOrUpdateVehicleMarker(v) {
+      const cat = VEHICLE_CATALOG[v.type];
+      if (!vehicleMarkers[v.id]) {
+        const icon = L.divIcon({
+          className: '',
+          html: `<div class="vehicle-marker" style="width:24px;height:24px;background:${cat.color};">${cat.icon}</div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+        const m = L.marker([v.lat, v.lng], { icon, zIndexOffset: 500 }).addTo(map);
+        m.bindTooltip(v.name, { direction: 'top' });
+        vehicleMarkers[v.id] = m;
+      } else {
+        vehicleMarkers[v.id].setLatLng([v.lat, v.lng]);
+      }
+
+      // Draw route line
+      if (v.routeEnd) {
+        if (!routeLines[v.id]) {
+          routeLines[v.id] = L.polyline([[v.lat, v.lng], v.routeEnd], {
+            color: cat.color,
+            weight: 2.5,
+            dashArray: '5, 6',
+            opacity: 0.75
+          }).addTo(map);
+        } else {
+          routeLines[v.id].setLatLngs([[v.lat, v.lng], v.routeEnd]);
+        }
+      }
+    }
+
+    function removeVehicleVisuals(vId) {
+      if (vehicleMarkers[vId]) {
+        map.removeLayer(vehicleMarkers[vId]);
+        delete vehicleMarkers[vId];
+      }
+      if (routeLines[vId]) {
+        map.removeLayer(routeLines[vId]);
+        delete routeLines[vId];
+      }
+    }
+
+    // =========================================================================
+    // SIMULATION LOOP (60ms ticks -> smooth real-time movement & day cycle)
+    // =========================================================================
+    let lastTick = performance.now();
+    let autoSaveCounter = 0;
+
+    function gameLoop(now) {
+      const rawDt = Math.min(0.1, (now - lastTick) / 1000);
+      lastTick = now;
+
+      if (state.speed > 0 && document.getElementById('start-screen').classList.contains('hidden') && document.getElementById('gameover-screen').classList.contains('hidden')) {
+        const dt = rawDt * state.speed;
+
+        // 1. Advance In-Game Clock (1 in-game day = ~120 real seconds at 1x -> 12 in-game mins per real sec)
+        const prevMinutes = state.minutesOfDay;
+        state.minutesOfDay += dt * 12;
+        if (state.minutesOfDay >= 1440) {
+          state.minutesOfDay -= 1440;
+          onNewDay();
+        }
+
+        // 2. Spawn Missions
+        missionSpawnTimer -= dt;
+        if (missionSpawnTimer <= 0) {
+          spawnMission();
+          missionSpawnTimer = Math.max(7, 18 - state.stations.length * 1.5);
+        }
+
+        // 3. Update Vehicles
+        state.vehicles.forEach(v => {
+          if (v.status === 3 || v.status === 1) {
+            v.travelElapsed += dt;
+            const t = Math.min(1, v.travelElapsed / v.travelTotal);
+            v.lat = v.routeStart[0] + (v.routeEnd[0] - v.routeStart[0]) * t;
+            v.lng = v.routeStart[1] + (v.routeEnd[1] - v.routeStart[1]) * t;
+            createOrUpdateVehicleMarker(v);
+
+            if (t >= 1) {
+              if (v.status === 3) {
+                // Arrived at mission
+                v.status = 4;
+                if (routeLines[v.id]) {
+                  map.removeLayer(routeLines[v.id]);
+                  delete routeLines[v.id];
+                }
+              } else if (v.status === 1) {
+                // Returned to station
+                v.status = 2;
+                const st = state.stations.find(s => s.id === v.stationId);
+                if (st) { v.lat = st.lat; v.lng = st.lng; }
+                v.targetMissionId = null;
+                v.routeStart = null;
+                v.routeEnd = null;
+                removeVehicleVisuals(v.id);
+              }
+            }
+          }
+        });
+
+        // 4. Update Missions
+        for (let i = state.missions.length - 1; i >= 0; i--) {
+          const m = state.missions[i];
+          const onSceneVehicles = state.vehicles.filter(v => v.targetMissionId === m.id && v.status === 4);
+
+          // Check if all required vehicle types are on scene
+          const reqMet = Object.entries(m.req).every(([reqType, reqCount]) => {
+            const countOnScene = onSceneVehicles.filter(v => v.type === reqType).length;
+            return countOnScene >= reqCount;
+          });
+
+          if (reqMet) {
+            m.progress += dt;
+            if (m.progress >= m.duration) {
+              completeMission(i);
+              continue;
+            }
+          } else {
+            // Patience ticks down if not all required vehicles are working on it
+            m.timeLeft -= dt;
+            if (m.timeLeft <= 0) {
+              failMission(i);
+              continue;
+            }
+          }
+        }
+
+        // 5. Auto-save every 15s
+        autoSaveCounter += rawDt;
+        if (autoSaveCounter >= 15) {
+          autoSaveCounter = 0;
+          saveGame(false);
+        }
+
+        updateHUDAndBars();
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+    requestAnimationFrame(gameLoop);
+
+    function onNewDay() {
+      state.day += 1;
+      // Every day: 6 new applicants per station!
+      state.stations.forEach(s => {
+        s.applicants = generateDailyApplicants(6);
+      });
+      AudioSys.playAlarm();
+      saveGame(false);
+      updateAllUI();
+      showToast(`Tag ${state.day} angebrochen! Jede Wache hat 6 neue Bewerber.`, 'info');
+    }
+
+    function completeMission(index) {
+      const m = state.missions[index];
+      state.money += m.reward;
+      state.totalEarned += m.reward;
+      state.missionsCompleted += 1;
+      state.reputation = Math.min(100, state.reputation + 2);
+
+      // Send assigned vehicles back to station (Status 1)
+      state.vehicles.filter(v => v.targetMissionId === m.id).forEach(v => {
+        const st = state.stations.find(s => s.id === v.stationId);
+        if (st) {
+          v.status = 1;
+          v.targetMissionId = null;
+          v.routeStart = [v.lat, v.lng];
+          v.routeEnd = [st.lat, st.lng];
+          const dist = getDistanceKm(v.lat, v.lng, st.lat, st.lng);
+          const cat = VEHICLE_CATALOG[v.type];
+          v.travelTotal = Math.max(3, (dist / (cat.speedKmh / 3.6)) * 1000 / 240);
+          v.travelElapsed = 0;
+          createOrUpdateVehicleMarker(v);
+        } else {
+          v.status = 2;
+          removeVehicleVisuals(v.id);
+        }
+      });
+
+      if (missionMarkers[m.id]) {
+        map.removeLayer(missionMarkers[m.id]);
+        delete missionMarkers[m.id];
+      }
+      state.missions.splice(index, 1);
+
+      AudioSys.playCash();
+      showToast(`Einsatz abgeschlossen: ${m.title} (+${formatMoney(m.reward)})`, 'success');
+      updateAllUI();
+    }
+
+    function failMission(index) {
+      const m = state.missions[index];
+      state.reputation = Math.max(0, state.reputation - 15);
+
+      // Recall any vehicles
+      state.vehicles.filter(v => v.targetMissionId === m.id).forEach(v => {
+        const st = state.stations.find(s => s.id === v.stationId);
+        if (st) {
+          v.status = 1;
+          v.targetMissionId = null;
+          v.routeStart = [v.lat, v.lng];
+          v.routeEnd = [st.lat, st.lng];
+          v.travelTotal = 5;
+          v.travelElapsed = 0;
+        }
+      });
+
+      if (missionMarkers[m.id]) {
+        map.removeLayer(missionMarkers[m.id]);
+        delete missionMarkers[m.id];
+      }
+      state.missions.splice(index, 1);
+
+      AudioSys.playReject();
+      showToast(`Einsatz verpasst: ${m.title} (-15% Ansehen)`, 'error');
+
+      if (state.reputation <= 0) {
+        triggerGameOver();
+      } else {
+        updateAllUI();
+      }
+    }
+
+    function triggerGameOver() {
+      state.speed = 0;
+      document.getElementById('go-days').textContent = state.day;
+      document.getElementById('go-missions').textContent = state.missionsCompleted;
+      document.getElementById('go-earned').textContent = formatMoney(state.totalEarned);
+      document.getElementById('gameover-screen').classList.remove('hidden');
+    }
+
+    // =========================================================================
+    // UI RENDERING
+    // =========================================================================
+    function switchTab(tab) {
+      activeTab = tab;
+      ['missions', 'stations', 'hr'].forEach(t => {
+        const el = document.getElementById(`tab-${t}`);
+        if (t === tab) {
+          el.classList.add('border-blue-500', 'text-blue-400');
+          el.classList.remove('border-transparent', 'text-slate-400');
+        } else {
+          el.classList.remove('border-blue-500', 'text-blue-400');
+          el.classList.add('border-transparent', 'text-slate-400');
+        }
+      });
+      renderSidebar();
+    }
+
+    function updateAllUI() {
+      updateHUDAndBars();
+      renderSidebar();
+      if (currentStationModalId) renderStationModal();
+    }
+
+    function updateHUDAndBars() {
+      document.getElementById('hud-money').textContent = state.money.toLocaleString('de-DE');
+      document.getElementById('hud-rep').textContent = `${state.reputation}%`;
+      document.getElementById('hud-day').textContent = `Tag ${state.day}`;
+      document.getElementById('mobile-day').textContent = `Tag ${state.day}`;
+
+      const hrs = Math.floor(state.minutesOfDay / 60).toString().padStart(2, '0');
+      const mins = Math.floor(state.minutesOfDay % 60).toString().padStart(2, '0');
+      document.getElementById('hud-time').textContent = `${hrs}:${mins}`;
+      document.getElementById('mobile-time').textContent = `${hrs}:${mins}`;
+
+      document.getElementById('badge-missions').textContent = state.missions.length;
+      document.getElementById('badge-stations').textContent = state.stations.length;
+
+      const totalApplicants = state.stations.reduce((sum, s) => sum + s.applicants.length, 0);
+      const appBadge = document.getElementById('badge-applicants');
+      appBadge.textContent = totalApplicants;
+      if (totalApplicants > 0) appBadge.classList.remove('hidden');
+      else appBadge.classList.add('hidden');
+
+      // Update live mission progress bars in sidebar if on missions tab
+      if (activeTab === 'missions') {
+        state.missions.forEach(m => {
+          const progEl = document.getElementById(`m-prog-${m.id}`);
+          const timeEl = document.getElementById(`m-time-${m.id}`);
+          if (progEl) {
+            const pct = Math.min(100, (m.progress / m.duration) * 100);
+            progEl.style.width = `${pct}%`;
+          }
+          if (timeEl) {
+            const tPct = Math.max(0, (m.timeLeft / m.maxTime) * 100);
+            timeEl.style.width = `${tPct}%`;
+          }
+        });
+      }
+    }
+
+    function renderSidebar() {
+      const container = document.getElementById('sidebar-content');
+
+      if (activeTab === 'missions') {
+        if (state.missions.length === 0) {
+          container.innerHTML = `
+            <div class="text-center py-10 px-4">
+              <div class="text-3xl mb-2">📡</div>
+              <div class="text-sm font-bold text-slate-300">Keine aktiven Einsätze</div>
+              <div class="text-xs text-slate-500 mt-1">
+                ${state.stations.length === 0 ? 'Baue zuerst eine Wache auf der Karte, damit Notrufe eingehen.' : 'Warte auf neue Notrufe aus deinem Einsatzgebiet...'}
+              </div>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = state.missions.map(m => {
+          const reqBadges = Object.entries(m.req).map(([k, v]) => {
+            const onScene = state.vehicles.filter(vh => vh.targetMissionId === m.id && vh.status === 4 && vh.type === k).length;
+            const enRoute = state.vehicles.filter(vh => vh.targetMissionId === m.id && vh.status === 3 && vh.type === k).length;
+            const ok = onScene >= v;
+            return `<span class="text-[10px] px-1.5 py-0.5 rounded font-bold ${ok ? 'bg-emerald-900 text-emerald-300' : enRoute > 0 ? 'bg-amber-900 text-amber-300' : 'bg-slate-800 text-slate-300'}">${onScene}/${v} ${k}</span>`;
+          }).join(' ');
+
+          const progPct = Math.min(100, (m.progress / m.duration) * 100);
+          const timePct = Math.max(0, (m.timeLeft / m.maxTime) * 100);
+
+          return `
+            <div class="p-3 rounded-xl bg-slate-800/70 border border-slate-700/80 hover:border-slate-500 transition">
+              <div class="flex justify-between items-start gap-2 mb-1.5">
+                <div>
+                  <span class="text-[10px] font-bold px-1.5 py-0.5 rounded text-white" style="background:${m.color}">${m.category}</span>
+                  <div class="font-bold text-sm text-white mt-1">${m.title}</div>
+                </div>
+                <span class="font-mono-tech text-xs font-bold text-emerald-400">+${formatMoney(m.reward)}</span>
+              </div>
+
+              <div class="flex flex-wrap gap-1 mb-2.5">${reqBadges}</div>
+
+              <div class="space-y-1 mb-2.5">
+                <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden" title="Einsatzfortschritt">
+                  <div id="m-prog-${m.id}" class="h-full bg-emerald-500 transition-all" style="width:${progPct}%"></div>
+                </div>
+                <div class="w-full h-1 bg-slate-900 rounded-full overflow-hidden" title="Restzeit">
+                  <div id="m-time-${m.id}" class="h-full bg-amber-500 transition-all" style="width:${timePct}%"></div>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button onclick="focusOnMap(${m.lat}, ${m.lng})" class="px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs text-slate-200 cursor-pointer" title="Auf Karte zeigen">📍</button>
+                <button onclick="openDispatchModal(${m.id})" class="flex-1 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer">🚨 Alarmieren</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      else if (activeTab === 'stations') {
+        if (state.stations.length === 0) {
+          container.innerHTML = `
+            <div class="text-center py-10 px-4">
+              <div class="text-3xl mb-2">🏗️</div>
+              <div class="text-sm font-bold text-slate-300">Noch keine Wachen</div>
+              <button onclick="openBuildModal()" class="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg cursor-pointer">Erste Wache bauen</button>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = state.stations.map(s => {
+          const def = STATION_TYPES[s.type];
+          const vehicles = state.vehicles.filter(v => v.stationId === s.id);
+          return `
+            <div class="p-3 rounded-xl bg-slate-800/70 border border-slate-700/80">
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-8 h-8 rounded-lg flex items-center justify-center text-base" style="background:${def.color}">${def.icon}</div>
+                  <div>
+                    <div class="font-bold text-sm text-white">${s.name}</div>
+                    <div class="text-[11px] text-slate-400">Personal: ${s.staff.length} • Fahrzeuge: ${vehicles.length}</div>
+                  </div>
+                </div>
+                <button onclick="focusOnMap(${s.lat}, ${s.lng})" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs cursor-pointer">📍</button>
+              </div>
+              <button onclick="openStationModal(${s.id})" class="w-full py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-bold text-white cursor-pointer">
+                Fahrzeuge & Details verwalten
+              </button>
+            </div>
+          `;
+        }).join('');
+      }
+
+      else if (activeTab === 'hr') {
+        if (state.stations.length === 0) {
+          container.innerHTML = `<div class="text-center py-10 text-xs text-slate-400">Baue zuerst eine Wache, um Bewerber zu erhalten.</div>`;
+          return;
+        }
+
+        container.innerHTML = state.stations.map(s => {
+          const def = STATION_TYPES[s.type];
+          const applicantsHtml = s.applicants.length === 0
+            ? `<div class="text-xs text-slate-500 italic py-2">Alle heutigen Bewerber bearbeitet. Morgen kommen 6 neue!</div>`
+            : s.applicants.map(a => `
+              <div class="p-2.5 rounded-lg bg-slate-900/90 border border-slate-700/70 flex items-center justify-between gap-2">
+                <div>
+                  <div class="text-xs font-bold text-white">${a.name} <span class="text-slate-400 font-normal">(${a.age})</span></div>
+                  <div class="text-[11px] text-amber-400">${'★'.repeat(a.stars)}${'☆'.repeat(5 - a.stars)} <span class="text-slate-400">• ${a.trait}</span></div>
+                  <div class="text-[10px] text-emerald-400 font-mono-tech">Einstellung: ${formatMoney(a.hireCost)}</div>
+                </div>
+                <div class="flex gap-1.5 shrink-0">
+                  <button onclick="acceptApplicant(${s.id}, ${a.id})" class="w-8 h-8 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center cursor-pointer" title="Einstellen">✓</button>
+                  <button onclick="rejectApplicant(${s.id}, ${a.id})" class="w-8 h-8 rounded-lg bg-red-600/80 hover:bg-red-500 text-white font-bold text-sm flex items-center justify-center cursor-pointer" title="Ablehnen">✗</button>
+                </div>
+              </div>
+            `).join('');
+
+          return `
+            <div class="p-3 rounded-xl bg-slate-800/60 border border-slate-700/80 space-y-2">
+              <div class="flex items-center justify-between border-b border-slate-700/60 pb-2">
+                <div class="flex items-center gap-2">
+                  <span>${def.icon}</span>
+                  <span class="font-bold text-sm text-white">${s.name}</span>
+                </div>
+                <span class="text-xs text-slate-400">Personal: <strong class="text-white">${s.staff.length}</strong></span>
+              </div>
+              <div class="text-[11px] font-bold uppercase text-slate-400">Heutige Bewerber (${s.applicants.length}/6)</div>
+              <div class="space-y-1.5">${applicantsHtml}</div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // =========================================================================
+    // HELPERS & CONTROLS
+    // =========================================================================
+    function setSpeed(spd) {
+      state.speed = spd;
+      [0, 1, 2, 4].forEach(s => {
+        const btn = document.getElementById(`spd-${s}`);
+        if (s === spd) {
+          btn.classList.add('bg-blue-600', 'text-white');
+          btn.classList.remove('text-slate-400');
+        } else {
+          btn.classList.remove('bg-blue-600', 'text-white');
+          btn.classList.add('text-slate-400');
+        }
+      });
+    }
+
+    function toggleSound() {
+      AudioSys.enabled = !AudioSys.enabled;
+      document.getElementById('btn-sound').textContent = AudioSys.enabled ? '🔊' : '🔇';
+    }
+
+    function manualSave() {
+      saveGame(true);
+    }
+
+    function saveGame(showMsg = true) {
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+        if (showMsg) showToast('Spielstand gespeichert!', 'success');
+      } catch (e) {}
+    }
+
+    function toggleMobileSidebar() {
+      const sb = document.getElementById('sidebar');
+      sb.classList.toggle('-translate-x-full');
+    }
+
+    function focusOnMap(lat, lng) {
+      map.flyTo([lat, lng], Math.max(map.getZoom(), 13), { duration: 0.7 });
+      if (window.innerWidth < 768) {
+        document.getElementById('sidebar').classList.add('-translate-x-full');
+      }
+    }
+
+    function getStatusBadge(status) {
+      switch (status) {
+        case 2: return `<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-900/80 text-emerald-300 font-bold">Status 2 • Auf Wache</span>`;
+        case 3: return `<span class="text-[10px] px-2 py-0.5 rounded bg-amber-900/80 text-amber-300 font-bold">Status 3 • Anfahrt</span>`;
+        case 4: return `<span class="text-[10px] px-2 py-0.5 rounded bg-red-900/80 text-red-300 font-bold">Status 4 • Im Einsatz</span>`;
+        case 1: return `<span class="text-[10px] px-2 py-0.5 rounded bg-blue-900/80 text-blue-300 font-bold">Status 1 • Rückfahrt</span>`;
+        default: return '';
+      }
+    }
+
+    function formatMoney(num) {
+      return `${num.toLocaleString('de-DE')} €`;
+    }
+
+    function getDistanceKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function showToast(msg, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const colors = {
+        info: 'bg-slate-800 border-blue-500 text-slate-100',
+        success: 'bg-emerald-950 border-emerald-500 text-emerald-100',
+        error: 'bg-red-950 border-red-500 text-red-100',
+        alert: 'bg-amber-950 border-amber-500 text-amber-100'
+      };
+      const el = document.createElement('div');
+      el.className = `toast-enter p-3 rounded-xl border-l-4 shadow-xl text-xs font-medium pointer-events-auto ${colors[type] || colors.info}`;
+      el.textContent = msg;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transition = 'opacity 0.3s';
+        setTimeout(() => el.remove(), 300);
+      }, 3600);
+    }
+  </script>
+</body>
+</html>
